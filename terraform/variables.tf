@@ -108,11 +108,9 @@ variable "task_memory" {
   default     = 512
 }
 
-variable "task_stop_timeout" {
-  description = "stopTimeout (s) das task definitions — dá tempo ao graceful shutdown"
-  type        = number
-  default     = 30
-}
+# Nota: o graceful shutdown dos containers usa o stopTimeout default do
+# Fargate (30s) — o provider Terraform não expõe o campo stopTimeout da task
+# definition; SIGTERM é tratado pelos consumers (SqsConsumer.stop()).
 
 # ---------------------------------------------------------------------------
 # SQS / DLQ
@@ -139,6 +137,35 @@ variable "sqs_receive_wait_time" {
 # ---------------------------------------------------------------------------
 # DynamoDB
 # ---------------------------------------------------------------------------
+
+# Nomes das tabelas — convenção da plataforma (prefixo finance-platform).
+# O .env.example do authorization-service usa defaults "authorization-service"/
+# "authorization-service-checkpoint"; as task definitions ECS injetam estes
+# valores via env (DYNAMODB_TABLE / DYNAMODB_CHECKPOINT_TABLE), sobrescrevendo
+# os defaults do serviço. Ver terraform/README.md (divergências 1 e 3).
+variable "authorization_table_name" {
+  description = "Tabela single-table do Authorization Service (PK/SK + gsi-auth + Streams)"
+  type        = string
+  default     = "finance-platform-authorization"
+}
+
+variable "checkpoint_table_name" {
+  description = "Tabela de checkpoint do relay in-process do Authorization Service (na AWS o relay é a Lambda)"
+  type        = string
+  default     = "finance-platform-authorization-checkpoint"
+}
+
+variable "accounting_entries_table_name" {
+  description = "Ledger do Accounting Consumer (idempotente por event_id)"
+  type        = string
+  default     = "finance-platform-accounting-entries"
+}
+
+variable "consumer_idempotency_table_name" {
+  description = "Deduplicação compartilhada dos consumers por event_id (ADR-007)"
+  type        = string
+  default     = "finance-platform-consumer-idempotency"
+}
 
 variable "dynamodb_billing_mode" {
   description = "Billing mode das tabelas DynamoDB"

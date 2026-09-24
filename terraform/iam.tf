@@ -3,10 +3,11 @@
 #
 # Roles:
 #   ecs_execution    -> ECS agent (pull de imagem GHCR, logs CloudWatch)
-#   authorization    -> DynamoDB (CRUD/transações nas 4 tabelas)
+#   authorization    -> DynamoDB single-table (TransactWriteItems: contrato +
+#                       autorização + idempotência + outbox na mesma tabela)
 #   accounting/fraud/notification -> SQS (Receive/Delete na própria fila) +
-#                      DynamoDB (tabela de idempotência dos consumers)
-#   outbox_relay     -> DynamoDB Streams (tabela de outbox) + EventBridge PutEvents
+#                      DynamoDB (idempotência dos consumers; accounting: + ledger)
+#   outbox_relay     -> DynamoDB Streams (single-table) + EventBridge PutEvents
 # ---------------------------------------------------------------------------
 
 # --- Trust policies ---------------------------------------------------------
@@ -52,8 +53,11 @@ resource "aws_iam_role" "authorization_task" {
 }
 
 data "aws_iam_policy_document" "authorization_task" {
+  # Single-table REAL do authorization-service (DynamoDbTable.ts):
+  # contratos, autorizações, idempotência e outbox convivem na mesma tabela
+  # (PK/SK), consultados via TransactWriteItems + GSI gsi-auth.
   statement {
-    sid    = "DynamoDBAuthorizationTables"
+    sid    = "DynamoDBAuthorizationSingleTable"
     effect = "Allow"
     actions = [
       "dynamodb:GetItem",
@@ -63,13 +67,21 @@ data "aws_iam_policy_document" "authorization_task" {
       "dynamodb:DeleteItem",
       "dynamodb:ConditionCheckItem",
       "dynamodb:TransactWriteItems",
+      "dynamodb:BatchWriteItem",
     ]
     resources = [
-      aws_dynamodb_table.contracts.arn,
-      aws_dynamodb_table.authorizations.arn,
-      aws_dynamodb_table.idempotency.arn,
-      aws_dynamodb_table.outbox.arn,
+      aws_dynamodb_table.authorization.arn,
+      "${aws_dynamodb_table.authorization.arn}/index/*",
     ]
+  }
+
+  # Checkpoint do relay in-process do serviço (na stack AWS o relay é a Lambda;
+  # mantido para compatibilidade — ver terraform/README.md divergência 3).
+  statement {
+    sid       = "DynamoDBRelayCheckpoint"
+    effect    = "Allow"
+    actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
+    resources = [aws_dynamodb_table.authorization_checkpoint.arn]
   }
 }
 
@@ -113,8 +125,20 @@ data "aws_iam_policy_document" "consumer_task" {
   statement {
     sid       = "DynamoDbConsumerIdempotency"
     effect    = "Allow"
-    actions   = ["dynamodb:GetItem", "dynamodb:PutItem"]
+    actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
     resources = [aws_dynamodb_table.consumer_idempotency.arn]
+  }
+
+  # Accounting: ledger finance-platform-accounting-entries
+  # (IDEMPOTENCY_BACKEND=dynamodb — ver terraform/README.md divergências 4/5).
+  dynamic "statement" {
+    for_each = each.key == "accounting" ? [1] : []
+    content {
+      sid       = "DynamoDbAccountingEntries"
+      effect    = "Allow"
+      actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:Query"]
+      resources = [aws_dynamodb_table.accounting_entries.arn]
+    }
   }
 }
 
@@ -143,7 +167,7 @@ data "aws_iam_policy_document" "outbox_relay" {
       "dynamodb:DescribeStream",
       "dynamodb:ListStreams",
     ]
-    resources = [aws_dynamodb_table.outbox.stream_arn]
+    resources = [aws_dynamodb_table.authorization.stream_arn]
   }
 
   statement {

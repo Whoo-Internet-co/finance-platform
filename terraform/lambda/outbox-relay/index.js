@@ -73,8 +73,19 @@ exports.handler = async (event) => {
     }
 
     const payload = unmarshall(newImage);
+
+    // A stream cobre a single-table inteira (contratos, autorizações,
+    // idempotência e outbox). Publica SOMENTE registros de outbox:
+    // entity=OUTBOX (builder do authorization-service) ou PK=OUTBOX#<event_id>.
+    const isOutboxRecord =
+      payload.entity === 'OUTBOX' ||
+      (typeof payload.PK === 'string' && payload.PK.startsWith('OUTBOX#'));
+    if (!isOutboxRecord) {
+      continue;
+    }
+
     if (!payload.event_id) {
-      console.warn('outbox-relay: record without event_id, skipped', {
+      console.warn('outbox-relay: outbox record without event_id, skipped', {
         sequenceNumber: record.dynamodb && record.dynamodb.SequenceNumber,
       });
       continue;

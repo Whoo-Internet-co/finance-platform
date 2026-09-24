@@ -32,9 +32,10 @@ resource "aws_lambda_function" "outbox_relay" {
   tags = { Name = "${var.project_name}-outbox-relay" }
 }
 
-# Dispara a Lambda em todo INSERT na tabela de outbox (a partir de agora).
+# Dispara a Lambda em todo INSERT na single-table (o relay filtra registros de
+# outbox — entity=OUTBOX / PK=OUTBOX#event_id — e ignora os demais).
 resource "aws_lambda_event_source_mapping" "outbox_stream" {
-  event_source_arn               = aws_dynamodb_table.outbox.stream_arn
+  event_source_arn               = aws_dynamodb_table.authorization.stream_arn
   function_name                  = aws_lambda_function.outbox_relay.arn
   starting_position              = "LATEST"
   batch_size                     = 10
