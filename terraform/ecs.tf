@@ -71,6 +71,7 @@ locals {
         SQS_VISIBILITY_TIMEOUT     = tostring(var.sqs_visibility_timeout)
         SQS_MAX_NUMBER_OF_MESSAGES = "10"
         ACCOUNTING_ENTRIES_TABLE   = aws_dynamodb_table.accounting_entries.name
+        LEDGER_BACKEND             = "dynamodb"
         IDEMPOTENCY_BACKEND        = "dynamodb"
         IDEMPOTENCY_TABLE          = aws_dynamodb_table.consumer_idempotency.name
       }

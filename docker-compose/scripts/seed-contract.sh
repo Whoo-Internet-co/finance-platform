@@ -22,6 +22,8 @@ AWS_REGION="${AWS_REGION:-us-east-1}"
 # LocalStack não valida credenciais, mas o AWS CLI exige algo definido.
 export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-test}"
 export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-test}"
+export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-$AWS_REGION}"
+export AWS_REGION
 
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 

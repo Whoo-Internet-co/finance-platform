@@ -127,8 +127,7 @@ async function fanOut(payload) {
     await sqs.send(
       new SendMessageCommand({
         QueueUrl: queueUrl,
-        Body: body,
-        MessageDeduplicationId: undefined, // filas standard (at-least-once)
+        MessageBody: body,
       }),
     );
     sent += 1;

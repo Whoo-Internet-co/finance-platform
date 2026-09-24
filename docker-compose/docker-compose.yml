@@ -26,15 +26,25 @@ services:
       SERVICES: dynamodb,sqs
       DEBUG: "0"
       DYNAMODB_SHARE_DB: "1"
+      # Força QueueUrl path-style (http://localstack:4566/000000000000/...)
+      # compatível com QUEUE_URLS / SQS_QUEUE_URL do compose. Sem isso, o
+      # LocalStack 3 devolve sqs.<region>.localhost.localstack.cloud e
+      # SendMessage/ReceiveMessage falham com URL path-style.
+      SQS_ENDPOINT_STRATEGY: path
     volumes:
       - ./init:/etc/localstack/init/ready.d
       - localstack-data:/var/lib/localstack
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+      # Healthy só depois das filas (init ready.d). curl sozinho sobe dependents cedo demais.
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:4566/_localstack/health >/dev/null && awslocal sqs get-queue-url --queue-name finance-platform-fraud-queue >/dev/null",
+        ]
       interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
+      timeout: 10s
+      retries: 36
+      start_period: 20s
 
   # Relay local: DynamoDB Streams (single-table) -> fan-out SQS (3 filas).
   # Equivalente local ao relay Lambda + EventBridge (ADR-006).
@@ -203,6 +213,7 @@ services:
       SQS_VISIBILITY_TIMEOUT: "30"
       SQS_MAX_NUMBER_OF_MESSAGES: "10"
       ACCOUNTING_ENTRIES_TABLE: ${ACCOUNTING_ENTRIES_TABLE:-finance-platform-accounting-entries}
+      LEDGER_BACKEND: dynamodb
       IDEMPOTENCY_BACKEND: dynamodb
       IDEMPOTENCY_TABLE: ${CONSUMER_IDEMPOTENCY_TABLE:-finance-platform-consumer-idempotency}
       DYNAMODB_ENDPOINT: http://localstack:4566
