@@ -1,0 +1,222 @@
+name: finance-platform-local
+
+# ---------------------------------------------------------------------------
+# Ambiente local — Finance Platform (ADR-006: adapter equivalente permitido)
+#
+# Default (sem profiles): LocalStack (dynamodb,sqs) + outbox-relay-local.
+# Profiles:
+#   --profile ghcr  -> authorization-service + 3 consumers via imagens GHCR
+#   --profile build -> authorization-service + 3 consumers via build local
+#                      (exige os repos irmãos em ../; ver README.md)
+#
+# O EventBridge é restrito ao LocalStack Pro: o outbox-relay-local lê o
+# DynamoDB Streams e faz fan-out direto para as 3 filas SQS, emulando o
+# envelope que o EventBridge entregaria (campo `detail`), preservando o
+# event_id — comportamento equivalente ao relay Lambda + regra de fan-out
+# da stack AWS (ADR-005/006).
+# ---------------------------------------------------------------------------
+
+services:
+  localstack:
+    image: localstack/localstack:3
+    container_name: fp-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: dynamodb,sqs
+      DEBUG: "0"
+      DYNAMODB_SHARE_DB: "1"
+    volumes:
+      - ./init:/etc/localstack/init/ready.d
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # Relay local: DynamoDB Streams (single-table) -> fan-out SQS (3 filas).
+  # Equivalente local ao relay Lambda + EventBridge (ADR-006).
+  outbox-relay-local:
+    build: ./outbox-relay-local
+    container_name: fp-outbox-relay
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_ENDPOINT_URL: http://localstack:4566
+      TABLE_NAME: ${AUTHORIZATION_TABLE:-finance-platform-authorization}
+      QUEUE_URLS: >-
+        http://localstack:4566/000000000000/${QUEUE_PREFIX:-finance-platform}-accounting-queue,
+        http://localstack:4566/000000000000/${QUEUE_PREFIX:-finance-platform}-fraud-queue,
+        http://localstack:4566/000000000000/${QUEUE_PREFIX:-finance-platform}-notification-queue
+      EVENT_SOURCE: co.whoo-internet.finance.authorization
+      EVENT_DETAIL_TYPE: TransacaoAutorizada
+      POLL_INTERVAL_MS: "1000"
+    healthcheck:
+      test: ["CMD", "pidof", "node"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- Authorization Service ------------------------------------------------
+  # Opção A (profile ghcr): imagem publicada no GHCR.
+  authorization-service:
+    image: ghcr.io/whoo-internet-co/authorization-service:${IMAGE_TAG:-latest}
+    profiles: [ghcr]
+    container_name: fp-authorization
+    depends_on:
+      localstack:
+        condition: service_healthy
+    ports:
+      - "${AUTHORIZATION_PORT:-3000}:3000"
+    environment: &authorization-env
+      SERVICE_NAME: authorization-service
+      PORT: "3000"
+      NODE_ENV: production
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      ADAPTER_MODE: dynamodb
+      DYNAMODB_ENDPOINT: http://localstack:4566
+      DYNAMODB_TABLE: ${AUTHORIZATION_TABLE:-finance-platform-authorization}
+      DYNAMODB_CHECKPOINT_TABLE: ${CHECKPOINT_TABLE:-finance-platform-authorization-checkpoint}
+      IDEMPOTENCY_TTL_SECONDS: "86400"
+      CONTRACTS_SCHEMA_PATH: contracts-vendored/events/transacao-autorizada/v1/schema.json
+      EVENT_SOURCE: co.whoo-internet.finance.authorization
+      # O relay local (streams -> SQS) é um serviço separado: o publisher
+      # in-process do serviço permanece desativado.
+      RELAY_PUBLISHER: none
+    healthcheck: &authorization-healthcheck
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # Opção B (profile build): build a partir do repo irmão ../authorization-service.
+  authorization-service-build:
+    build: ../authorization-service
+    profiles: [build]
+    container_name: fp-authorization
+    depends_on:
+      localstack:
+        condition: service_healthy
+    ports:
+      - "${AUTHORIZATION_PORT:-3000}:3000"
+    environment: *authorization-env
+    healthcheck: *authorization-healthcheck
+
+  # --- Consumers (GHCR via profile ghcr / build local via profile build) -----
+  fraud-consumer:
+    image: ghcr.io/whoo-internet-co/fraud-consumer:${IMAGE_TAG:-latest}
+    profiles: [ghcr]
+    container_name: fp-fraud-consumer
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment: &fraud-env
+      SERVICE_NAME: fraud-consumer
+      NODE_ENV: production
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_ENDPOINT_URL: http://localstack:4566
+      SQS_QUEUE_URL: http://localstack:4566/000000000000/${QUEUE_PREFIX:-finance-platform}-fraud-queue
+      SQS_WAIT_TIME_SECONDS: "5"
+      SQS_VISIBILITY_TIMEOUT: "30"
+      SQS_MAX_NUMBER_OF_MESSAGES: "10"
+      FRAUD_MOCK_RESULT: APPROVED
+    healthcheck: &consumer-healthcheck
+      test: ["CMD", "pidof", "node"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  fraud-consumer-build:
+    build: ../fraud-consumer
+    profiles: [build]
+    container_name: fp-fraud-consumer
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment: *fraud-env
+    healthcheck: *consumer-healthcheck
+
+  notification-consumer:
+    image: ghcr.io/whoo-internet-co/notification-consumer:${IMAGE_TAG:-latest}
+    profiles: [ghcr]
+    container_name: fp-notification-consumer
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment: &notification-env
+      SERVICE_NAME: notification-consumer
+      NODE_ENV: production
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_ENDPOINT_URL: http://localstack:4566
+      SQS_QUEUE_URL: http://localstack:4566/000000000000/${QUEUE_PREFIX:-finance-platform}-notification-queue
+      SQS_WAIT_TIME_SECONDS: "5"
+      SQS_VISIBILITY_TIMEOUT: "30"
+      SQS_MAX_NUMBER_OF_MESSAGES: "10"
+    healthcheck: *consumer-healthcheck
+
+  notification-consumer-build:
+    build: ../notification-consumer
+    profiles: [build]
+    container_name: fp-notification-consumer
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment: *notification-env
+    healthcheck: *consumer-healthcheck
+
+  # accounting-consumer está sendo finalizado em paralelo:
+  #   - profile ghcr: usa a imagem publicada (quando disponível);
+  #   - profile build: exige ../accounting-consumer com Dockerfile.
+  accounting-consumer:
+    image: ghcr.io/whoo-internet-co/accounting-consumer:${IMAGE_TAG:-latest}
+    profiles: [ghcr]
+    container_name: fp-accounting-consumer
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment: &accounting-env
+      SERVICE_NAME: accounting-consumer
+      NODE_ENV: production
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_ENDPOINT_URL: http://localstack:4566
+      SQS_QUEUE_URL: http://localstack:4566/000000000000/${QUEUE_PREFIX:-finance-platform}-accounting-queue
+      SQS_WAIT_TIME_SECONDS: "5"
+      SQS_VISIBILITY_TIMEOUT: "30"
+      SQS_MAX_NUMBER_OF_MESSAGES: "10"
+      ACCOUNTING_ENTRIES_TABLE: ${ACCOUNTING_ENTRIES_TABLE:-finance-platform-accounting-entries}
+      IDEMPOTENCY_BACKEND: dynamodb
+      IDEMPOTENCY_TABLE: ${CONSUMER_IDEMPOTENCY_TABLE:-finance-platform-consumer-idempotency}
+      DYNAMODB_ENDPOINT: http://localstack:4566
+    healthcheck: *consumer-healthcheck
+
+  accounting-consumer-build:
+    build: ../accounting-consumer
+    profiles: [build]
+    container_name: fp-accounting-consumer
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment: *accounting-env
+    healthcheck: *consumer-healthcheck
+
+volumes:
+  localstack-data:

@@ -1,0 +1,16 @@
+{
+  "name": "outbox-relay-local",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Relay local do Transactional Outbox (ADR-006): DynamoDB Streams -> fan-out SQS (adapter equivalente ao EventBridge, que é LocalStack Pro)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.750.0",
+    "@aws-sdk/client-dynamodb-streams": "^3.750.0",
+    "@aws-sdk/client-sqs": "^3.750.0",
+    "@aws-sdk/util-dynamodb": "^3.750.0"
+  }
+}
