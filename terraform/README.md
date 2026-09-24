@@ -134,12 +134,21 @@ terraform init -backend=false
 terraform validate
 ```
 
+> Status da validação (24/set, terraform 1.5.7): `fmt -check` OK,
+> `init -backend=false` OK, `validate` **Success**.
+> `aws sts get-caller-identity` **falhou** — `~/.aws/credentials` não possui
+> profile `[default]` (somente profiles nomeados: `paulopatto-student`,
+> `paulopatto`, `voa`, `localstack`, `T10`, `neofin-*`). Para implantar,
+> exporte `AWS_PROFILE=<profile>` (ou crie um `[default]`) e rode
+> `aws sts get-caller-identity` antes do `terraform apply`.
+
 ## Como implantar
 
 ```bash
 cd terraform
 
-# 1. Credenciais (default profile em ~/.aws/credentials)
+# 1. Credenciais — sem [default] em ~/.aws/credentials, escolha o profile:
+export AWS_PROFILE=<seu-profile>
 aws sts get-caller-identity
 
 # 2. (Opcional) GHCR privado — crie o secret e informe o ARN:
