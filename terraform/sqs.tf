@@ -15,7 +15,7 @@ locals {
 }
 
 resource "aws_sqs_queue" "accounting" {
-  name                      = "${var.project_name}-${local.consumer_queues.accounting}"
+  name                       = "${var.project_name}-${local.consumer_queues.accounting}"
   visibility_timeout_seconds = var.sqs_visibility_timeout
   receive_wait_time_seconds  = var.sqs_receive_wait_time
   message_retention_seconds  = 1209600 # 14 dias
@@ -54,7 +54,7 @@ resource "aws_sqs_queue_policy" "accounting" {
 }
 
 resource "aws_sqs_queue" "fraud" {
-  name                      = "${var.project_name}-${local.consumer_queues.fraud}"
+  name                       = "${var.project_name}-${local.consumer_queues.fraud}"
   visibility_timeout_seconds = var.sqs_visibility_timeout
   receive_wait_time_seconds  = var.sqs_receive_wait_time
   message_retention_seconds  = 1209600
@@ -93,7 +93,7 @@ resource "aws_sqs_queue_policy" "fraud" {
 }
 
 resource "aws_sqs_queue" "notification" {
-  name                      = "${var.project_name}-${local.consumer_queues.notification}"
+  name                       = "${var.project_name}-${local.consumer_queues.notification}"
   visibility_timeout_seconds = var.sqs_visibility_timeout
   receive_wait_time_seconds  = var.sqs_receive_wait_time
   message_retention_seconds  = 1209600

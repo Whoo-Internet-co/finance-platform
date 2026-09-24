@@ -53,8 +53,8 @@ resource "aws_iam_role" "authorization_task" {
 
 data "aws_iam_policy_document" "authorization_task" {
   statement {
-    sid       = "DynamoDBAuthorizationTables"
-    effect    = "Allow"
+    sid    = "DynamoDBAuthorizationTables"
+    effect = "Allow"
     actions = [
       "dynamodb:GetItem",
       "dynamodb:PutItem",
@@ -83,8 +83,8 @@ resource "aws_iam_role_policy" "authorization_task" {
 
 locals {
   consumer_roles = {
-    accounting   = { queue = aws_sqs_queue.accounting,   dlq = aws_sqs_queue.accounting_dlq }
-    fraud        = { queue = aws_sqs_queue.fraud,        dlq = aws_sqs_queue.fraud_dlq }
+    accounting   = { queue = aws_sqs_queue.accounting, dlq = aws_sqs_queue.accounting_dlq }
+    fraud        = { queue = aws_sqs_queue.fraud, dlq = aws_sqs_queue.fraud_dlq }
     notification = { queue = aws_sqs_queue.notification, dlq = aws_sqs_queue.notification_dlq }
   }
 }

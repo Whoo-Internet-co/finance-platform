@@ -22,10 +22,10 @@ resource "aws_lambda_function" "outbox_relay" {
 
   environment {
     variables = {
-      EVENT_BUS_NAME     = aws_cloudwatch_event_bus.finance.name
-      EVENT_SOURCE       = var.event_source_prefix
-      EVENT_DETAIL_TYPE  = var.event_detail_type
-      AWS_REGION         = var.region
+      EVENT_BUS_NAME    = aws_cloudwatch_event_bus.finance.name
+      EVENT_SOURCE      = var.event_source_prefix
+      EVENT_DETAIL_TYPE = var.event_detail_type
+      AWS_REGION        = var.region
     }
   }
 
@@ -34,12 +34,12 @@ resource "aws_lambda_function" "outbox_relay" {
 
 # Dispara a Lambda em todo INSERT na tabela de outbox (a partir de agora).
 resource "aws_lambda_event_source_mapping" "outbox_stream" {
-  event_source_arn  = aws_dynamodb_table.outbox.stream_arn
-  function_name     = aws_lambda_function.outbox_relay.arn
-  starting_position = "LATEST"
-  batch_size        = 10
-  maximum_retry_attempts        = 10
-  maximum_record_age_in_seconds = 300
+  event_source_arn               = aws_dynamodb_table.outbox.stream_arn
+  function_name                  = aws_lambda_function.outbox_relay.arn
+  starting_position              = "LATEST"
+  batch_size                     = 10
+  maximum_retry_attempts         = 10
+  maximum_record_age_in_seconds  = 300
   bisect_batch_on_function_error = false
 }
 
